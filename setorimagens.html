@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SetorImagens — Gerenciador offline de imagens e anotações</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --accent:#4f46e5; --muted:#94a3b8; --glass: rgba(255,255,255,0.03);
+    --success: #16a34a;
+  }
+  html,body{height:100%; margin:0; font-family:Inter,system-ui,Segoe UI,Arial; background:linear-gradient(180deg,#071024 0%, #071426 100%); color:#e6eef8;}
+  .app{display:grid; grid-template-columns:320px 1fr; gap:18px; padding:18px; height:100vh; box-sizing:border-box;}
+  .panel {background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:14px; border-radius:12px; box-shadow:0 6px 18px rgba(2,6,23,0.6); overflow:auto;}
+  h1{font-size:18px; margin:0 0 8px 0; display:flex; align-items:center; gap:8px;}
+  h1 .dot{width:10px;height:10px;background:var(--accent);border-radius:50%;box-shadow:0 0 10px var(--accent)}
+  .controls{display:flex; gap:8px; margin:10px 0 12px 0; flex-wrap:wrap;}
+  .btn{background:var(--glass); border:1px solid rgba(255,255,255,0.04); padding:8px 10px; border-radius:8px; cursor:pointer; color:inherit; font-size:13px;}
+  .btn.primary{background:linear-gradient(90deg,var(--accent),#7c3aed); box-shadow:0 6px 18px rgba(79,70,229,0.18);}
+  .btn.warn{background:rgba(255,165,0,0.08); border-color:rgba(255,165,0,0.12);}
+  .input, input[type="text"]{background:transparent; border:1px dashed rgba(255,255,255,0.03); padding:8px; border-radius:8px; color:var(--muted); width:100%;}
+  .thumbs{display:flex; flex-direction:column; gap:8px;}
+  .thumb{display:flex; gap:8px; align-items:center; padding:8px; border-radius:8px; cursor:pointer; transition:background .12s;}
+  .thumb:hover{background:rgba(255,255,255,0.02)}
+  .thumb img{width:56px;height:40px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.02)}
+  .meta{font-size:13px;color:var(--muted); display:flex; flex-direction:column;}
+  .search{margin-bottom:8px;}
+  .viewer{display:flex; flex-direction:column; height:100%;}
+  .viewer-header{display:flex; align-items:center; gap:12px; padding-bottom:8px;}
+  .viewer-main{flex:1; display:flex; gap:12px; align-items:stretch; min-height:0;}
+  .image-area{flex:1; background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.01)); border-radius:12px; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center;}
+  .image-area img{max-width:100%; max-height:100%; display:block; user-select:none;}
+  .overlay{position:absolute; top:0; left:0; right:0; bottom:0; pointer-events:none;}
+  .selection{position:absolute; border:2px dashed var(--accent); background: linear-gradient(180deg, rgba(79,70,229,0.08), transparent); pointer-events:auto; display:flex; align-items:flex-end; justify-content:flex-start;}
+  .selection .label{background:var(--accent); color:white; padding:4px 6px; font-size:12px; border-radius:6px; margin:6px; box-shadow:0 6px 14px rgba(79,70,229,0.12);}
+  .sidebar-right{width:320px; display:flex; flex-direction:column; gap:12px;}
+  .list{display:flex; flex-direction:column; gap:8px;}
+  .card{background:rgba(255,255,255,0.02); padding:10px; border-radius:8px;}
+  .note{font-size:13px; color:var(--muted)}
+  .small{font-size:12px; color:var(--muted)}
+  .modal{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(2,6,23,0.6);}
+  .dialog{background:#071227; padding:16px; border-radius:10px; width:420px; box-shadow:0 12px 36px rgba(2,6,23,0.6)}
+  label{font-size:13px; color:var(--muted); margin-bottom:6px; display:block;}
+  textarea{width:100%; min-height:80px; padding:8px; border-radius:8px; border:1px dashed rgba(255,255,255,0.03); background:transparent; color:var(--muted);}
+  .row{display:flex; gap:8px; align-items:center;}
+  footer{font-size:12px;color:var(--muted); text-align:center; margin-top:8px;}
+  .badge{font-size:11px; padding:6px 8px; border-radius:999px; background:rgba(255,255,255,0.02);}
+  .tiny{font-size:11px}
+  .controls-right{margin-left:auto; display:flex; gap:8px;}
+  .muted{color:var(--muted)}
+  .danger{background:rgba(255,0,70,0.08); border-color:rgba(255,0,70,0.12)}
+  .empty{opacity:0.6; text-align:center; padding:40px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <h1><span class="dot"></span>SetorImagens</h1>
+    <div class="note">Armazene imagens e marque regiões com descrições — sem alterar o arquivo original.</div>
+
+    <div class="controls">
+      <label class="btn">
+        Importar imagens
+        <input id="fileInput" type="file" accept="image/*" multiple style="display:none" />
+      </label>
+      <button id="exportProject" class="btn">Exportar projeto</button>
+      <label class="btn">
+        Importar projeto
+        <input id="importProject" type="file" accept="application/json" style="display:none" />
+      </label>
+      <button id="clearAll" class="btn danger">Limpar tudo</button>
+    </div>
+
+    <div class="search">
+      <input id="searchBox" placeholder="Pesquisar por nome do arquivo..." class="input" />
+    </div>
+
+    <div id="thumbs" class="thumbs"></div>
+
+    <footer>
+      <div class="small">Local: IndexedDB — funciona offline no mesmo navegador.</div>
+      <div class="tiny">Dica: para usar como app, abra no Chrome/Edge e instale como app (PWA) ou use Electron para empacotar.</div>
+    </footer>
+  </aside>
+
+  <main class="viewer panel viewer">
+    <div class="viewer-header">
+      <div id="selectedInfo"><strong>Nenhuma imagem selecionada</strong></div>
+      <div class="controls-right">
+        <button id="zoomIn" class="btn">Zoom +</button>
+        <button id="zoomOut" class="btn">Zoom -</button>
+        <button id="exportImageData" class="btn">Exportar anotações (JSON)</button>
+      </div>
+    </div>
+
+    <div class="viewer-main">
+      <div class="image-area" id="imageArea">
+        <div id="placeholder" class="empty">Selecione uma imagem na lista à esquerda ou importe imagens.</div>
+        <img id="mainImage" src="" alt="" style="display:none" draggable="false" />
+        <div class="overlay" id="overlay"></div>
+      </div>
+
+      <aside class="sidebar-right">
+        <div class="card">
+          <div class="small"><strong>Instruções rápidas</strong></div>
+          <ol class="small">
+            <li>Importe imagens (btn "Importar imagens").</li>
+            <li>Selecione uma imagem na lista.</li>
+            <li>Arraste sobre a imagem para criar uma seleção.</li>
+            <li>Digite a descrição e salve — a imagem original não é alterada.</li>
+          </ol>
+        </div>
+
+        <div id="annotationsList" class="card list">
+          <div class="small"><strong>Anotações</strong></div>
+          <div id="annEmpty" class="note">Nenhuma anotação.</div>
+          <div id="annItems"></div>
+        </div>
+
+        <div class="card">
+          <div class="small"><strong>Projeto</strong></div>
+          <div class="row" style="margin-top:8px">
+            <div class="muted">Imagens salvas: <span id="countImages">0</span></div>
+            <div style="margin-left:auto" class="muted">Anotações: <span id="countAnns">0</span></div>
+          </div>
+        </div>
+
+      </aside>
+    </div>
+  </main>
+</div>
+
+<!-- Modal container -->
+<div id="modalRoot" style="display:none;"></div>
+
+<script>
+/*
+  SetorImagens - single-page offline app
+  - IndexedDB storage for images and annotations
+  - Non-destructive: original image preserved as dataURL in DB (you can change to store only metadata and read from disk if desired)
+  - Regions saved in normalized coordinates (x%,y%,w%,h%) to keep responsive
+*/
+
+(async function(){
+  // ---------- IndexedDB helper ----------
+  const DB_NAME = 'SetorImagensDB';
+  const DB_VERSION = 1;
+  const IMAGES_STORE = 'images';
+
+  function openDB() {
+    return new Promise((res, rej) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if(!db.objectStoreNames.contains(IMAGES_STORE)){
+          const s = db.createObjectStore(IMAGES_STORE, { keyPath: 'id' });
+          s.createIndex('name', 'name', { unique: false });
+        }
+      };
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async function putImage(obj){
+    const db = await openDB();
+    return new Promise((res,rej)=>{
+      const tx = db.transaction(IMAGES_STORE, 'readwrite');
+      tx.objectStore(IMAGES_STORE).put(obj);
+      tx.oncomplete = () => { db.close(); res(true); }
+      tx.onerror = () => { db.close(); rej(tx.error); }
+    });
+  }
+  async function getAllImages(){
+    const db = await openDB();
+    return new Promise((res,rej)=>{
+      const tx = db.transaction(IMAGES_STORE, 'readonly');
+      const req = tx.objectStore(IMAGES_STORE).getAll();
+      req.onsuccess = () => { db.close(); res(req.result); }
+      req.onerror = () => { db.close(); rej(req.error); }
+    });
+  }
+  async function getImage(id){
+    const db = await openDB();
+    return new Promise((res,rej)=>{
+      const tx = db.transaction(IMAGES_STORE, 'readonly');
+      const req = tx.objectStore(IMAGES_STORE).get(id);
+      req.onsuccess = () => { db.close(); res(req.result); }
+      req.onerror = () => { db.close(); rej(req.error); }
+    });
+  }
+  async function deleteImage(id){
+    const db = await openDB();
+    return new Promise((res,rej)=>{
+      const tx = db.transaction(IMAGES_STORE, 'readwrite');
+      tx.objectStore(IMAGES_STORE).delete(id);
+      tx.oncomplete = () => { db.close(); res(true); }
+      tx.onerror = () => { db.close(); rej(tx.error); }
+    });
+  }
+  async function clearDB(){
+    const db = await openDB();
+    return new Promise((res,rej)=>{
+      const tx = db.transaction(IMAGES_STORE, 'readwrite');
+      tx.objectStore(IMAGES_STORE).clear();
+      tx.oncomplete = () => { db.close(); res(true); }
+      tx.onerror = () => { db.close(); rej(tx.error); }
+    });
+  }
+
+  // ---------- Utilities ----------
+  function el(q){return document.querySelector(q)}
+  function create(tag, props={}, ...children){
+    const node = document.createElement(tag);
+    for(const k in props){
+      if(k.startsWith('on') && typeof props[k] === 'function') node.addEventListener(k.slice(2), props[k]);
+      else if(k === 'html') node.innerHTML = props[k];
+      else node.setAttribute(k, props[k]);
+    }
+    for(const c of children) if(c) node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    return node;
+  }
+  function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-6); }
+
+  async function fileToDataURL(file){
+    return await new Promise((res,rej)=>{
+      const r = new FileReader();
+      r.onload = ()=>res(r.result);
+      r.onerror = ()=>rej(r.error);
+      r.readAsDataURL(file);
+    });
+  }
+  async function sha1of(strOrArrayBuffer){
+    let buffer;
+    if(typeof strOrArrayBuffer === 'string'){
+      const enc = new TextEncoder();
+      buffer = enc.encode(strOrArrayBuffer);
+    } else buffer = strOrArrayBuffer;
+    const hash = await crypto.subtle.digest('SHA-1', buffer);
+    const hex = Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    return hex;
+  }
+
+  // ---------- UI elements ----------
+  const fileInput = el('#fileInput');
+  const thumbs = el('#thumbs');
+  const mainImage = el('#mainImage');
+  const placeholder = el('#placeholder');
+  const overlay = el('#overlay');
+  const selectedInfo = el('#selectedInfo');
+  const annItems = el('#annItems');
+  const annEmpty = el('#annEmpty');
+  const countImages = el('#countImages');
+  const countAnns = el('#countAnns');
+  const searchBox = el('#searchBox');
+  const exportProjectBtn = el('#exportProject');
+  const importProjectInput = el('#importProject');
+  const clearAllBtn = el('#clearAll');
+  const exportImageDataBtn = el('#exportImageData');
+  const zoomInBtn = el('#zoomIn');
+  const zoomOutBtn = el('#zoomOut');
+
+  // app state
+  let IMAGES = []; // loaded from DB
+  let currentImageId = null;
+  let zoom = 1;
+
+  // ---------- Load initial data ----------
+  async function refreshFromDB(){
+    IMAGES = await getAllImages();
+    renderThumbs(IMAGES);
+    updateCounts();
+  }
+  await refreshFromDB();
+
+  // ---------- Thumbnail rendering ----------
+  function renderThumbs(list){
+    thumbs.innerHTML = '';
+    const term = searchBox.value.trim().toLowerCase();
+    const filtered = list.filter(i => !term || (i.name && i.name.toLowerCase().includes(term)));
+    if(filtered.length === 0){
+      thumbs.appendChild(create('div',{class:'note'}, 'Nenhuma imagem. Importe imagens para começar.'));
+      return;
+    }
+    filtered.sort((a,b)=> (b.addedAt||0) - (a.addedAt||0));
+    for(const img of filtered){
+      const t = create('div',{class:'thumb', onclick:()=>selectImage(img.id)});
+      const im = create('img', { src: img.thumb || img.dataURL});
+      const meta = create('div',{class:'meta'});
+      meta.appendChild(create('div',{}, img.name || 'Sem nome'));
+      meta.appendChild(create('div',{class:'small muted'}, `${(img.size/1024|0)} KB — ${img.anns?img.anns.length:0} anotações`));
+      const del = create('button',{class:'btn tiny', onclick:(e)=>{ e.stopPropagation(); if(confirm('Excluir imagem e anotações?')) { deleteImage(img.id).then(()=>{ refreshFromDB(); if(currentImageId===img.id){ clearViewer(); } }); } }}, 'Excluir');
+      t.appendChild(im);
+      t.appendChild(meta);
+      t.appendChild(del);
+      thumbs.appendChild(t);
+    }
+  }
+
+  // ---------- Import images ----------
+  fileInput.addEventListener('change', async (e)=>{
+    const files = Array.from(e.target.files || []);
+    if(files.length===0) return;
+    for(const f of files){
+      try{
+        const dataURL = await fileToDataURL(f);
+        // compute id (sha1 of data)
+        const b = dataURL.split(',')[1];
+        // decode base64 to ArrayBuffer
+        const binary = atob(b);
+        const len = binary.length;
+        const buf = new Uint8Array(len);
+        for(let i=0;i<len;i++) buf[i] = binary.charCodeAt(i);
+        const id = await sha1of(buf.buffer);
+        // create thumbnail small canvas
+        const thumb = await makeThumb(dataURL, 200, 120);
+        const obj = {
+          id,
+          name: f.name,
+          size: f.size,
+          type: f.type,
+          dataURL,
+          thumb,
+          anns: [], // annotations
+          addedAt: Date.now()
+        };
+        await putImage(obj);
+      }catch(err){
+        console.error('Erro importando',err);
+      }
+    }
+    fileInput.value = '';
+    await refreshFromDB();
+  });
+
+  async function makeThumb(dataURL, w=200, h=120){
+    return new Promise((res,rej)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const canvas = document.createElement('canvas');
+        const ratio = img.width / img.height;
+        let tw = w, th = Math.round(w / ratio);
+        if(th > h){ th = h; tw = Math.round(h * ratio); }
+        canvas.width = tw; canvas.height = th;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img,0,0,tw,th);
+        res(canvas.toDataURL('image/jpeg',0.75));
+      };
+      img.onerror = rej;
+      img.src = dataURL;
+    });
+  }
+
+  // ---------- Viewer ----------
+  async function selectImage(id){
+    const obj = await getImage(id);
+    if(!obj) return;
+    currentImageId = id;
+    mainImage.src = obj.dataURL;
+    mainImage.style.display = 'block';
+    placeholder.style.display = 'none';
+    selectedInfo.innerHTML = `<strong>${obj.name}</strong> <span class="muted tiny">(${(obj.size/1024|0)} KB)</span>`;
+    overlay.innerHTML = '';
+    renderAnnotations(obj.anns || []);
+    updateAnnList(obj.anns || []);
+  }
+
+  function clearViewer(){
+    currentImageId = null;
+    mainImage.src = '';
+    mainImage.style.display = 'none';
+    placeholder.style.display = 'block';
+    overlay.innerHTML = '';
+    selectedInfo.innerHTML = '<strong>Nenhuma imagem selecionada</strong>';
+    annItems.innerHTML = '';
+    annEmpty.style.display = 'block';
+    updateCounts();
+  }
+
+  // annotations rendering
+  function renderAnnotations(anns){
+    overlay.innerHTML = '';
+    if(!anns || anns.length===0) return;
+    for(const a of anns){
+      const elSel = create('div',{class:'selection', style: `left:${a.x*100}%; top:${a.y*100}%; width:${a.w*100}%; height:${a.h*100}%`});
+      elSel.innerHTML = `<div class="label">${escapeHTML(a.title||'Anotação')}</div>`;
+      elSel.title = (a.desc||'');
+      // click to view / edit
+      elSel.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        showAnnotationEditor(a);
+      });
+      overlay.appendChild(elSel);
+    }
+  }
+
+  function escapeHTML(s){ if(!s) return ''; return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
+
+  function updateAnnList(anns){
+    annItems.innerHTML = '';
+    if(!anns || anns.length===0){ annEmpty.style.display = 'block'; return; }
+    annEmpty.style.display = 'none';
+    anns.forEach((a,i)=>{
+      const row = create('div',{class:'row'}, 
+        create('div',{style:'flex:1'}, create('div',{class:'small'}, a.title || `Anotação ${i+1}`), create('div',{class:'tiny muted'}, a.desc || '—'))
+      );
+      const btnView = create('button',{class:'btn tiny', onclick: async (e)=>{ e.stopPropagation(); showAnnotationEditor(a); }}, 'Editar');
+      const btnDel = create('button',{class:'btn tiny danger', onclick: async (e)=>{ e.stopPropagation(); if(confirm('Excluir anotação?')){ await removeAnnotation(currentImageId, a.id); } }}, 'Excluir');
+      row.appendChild(btnView);
+      row.appendChild(btnDel);
+      annItems.appendChild(row);
+    });
+  }
+
+  // update counts
+  async function updateCounts(){
+    const imgs = await getAllImages();
+    countImages.textContent = imgs.length;
+    const annsCount = imgs.reduce((s,i)=> s + ((i.anns && i.anns.length) || 0), 0);
+    countAnns.textContent = annsCount;
+  }
+
+  // ---------- Drawing selections ----------
+  let isDrawing = false;
+  let start = null;
+  let drawBox = null; // DOM element for current draw
+  const imageArea = el('#imageArea');
+
+  imageArea.addEventListener('mousedown', (e)=>{
+    if(!currentImageId) return;
+    // only left button
+    if(e.button !== 0) return;
+    isDrawing = true;
+    const rect = imageArea.getBoundingClientRect();
+    start = { x: e.clientX - rect.left, y: e.clientY - rect.top, w: rect.width, h: rect.height };
+    // create box
+    drawBox = create('div',{class:'selection', style:`left:0; top:0; width:0; height:0; pointer-events:none;`});
+    overlay.appendChild(drawBox);
+  });
+  window.addEventListener('mousemove', (e)=>{
+    if(!isDrawing || !start) return;
+    const rect = imageArea.getBoundingClientRect();
+    const curX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const curY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+    const x1 = Math.min(start.x, curX), y1 = Math.min(start.y, curY);
+    const w = Math.abs(curX - start.x), h = Math.abs(curY - start.y);
+    // normalize to percentages
+    const leftPct = x1 / rect.width * 100;
+    const topPct = y1 / rect.height * 100;
+    const wPct = w / rect.width * 100;
+    const hPct = h / rect.height * 100;
+    drawBox.style.left = leftPct + '%';
+    drawBox.style.top = topPct + '%';
+    drawBox.style.width = wPct + '%';
+    drawBox.style.height = hPct + '%';
+  });
+  window.addEventListener('mouseup', async (e)=>{
+    if(!isDrawing) return;
+    isDrawing = false;
+    if(!start) return;
+    // measure final box
+    const rect = imageArea.getBoundingClientRect();
+    const endX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const endY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+    const x1 = Math.min(start.x, endX), y1 = Math.min(start.y, endY);
+    const w = Math.abs(endX - start.x), h = Math.abs(endY - start.y);
+    const MIN_PX = 6;
+    overlay.removeChild(drawBox);
+    drawBox = null;
+    start = null;
+    if(w < MIN_PX || h < MIN_PX) return;
+    const xNorm = x1 / rect.width;
+    const yNorm = y1 / rect.height;
+    const wNorm = w / rect.width;
+    const hNorm = h / rect.height;
+    // open modal to input description and title
+    await openAnnotationModal({ x: xNorm, y: yNorm, w: wNorm, h: hNorm });
+  });
+
+  // ---------- Annotation modal ----------
+  function showModal(html){
+    const root = el('#modalRoot');
+    root.innerHTML = '';
+    root.style.display = 'block';
+    const wrapper = create('div',{class:'modal'});
+    const dialog = create('div',{class:'dialog', html });
+    wrapper.appendChild(dialog);
+    root.appendChild(wrapper);
+    return { root, dialog, wrapper };
+  }
+  function closeModal(){ const root=el('#modalRoot'); root.style.display='none'; root.innerHTML=''; }
+
+  async function openAnnotationModal(region, existing){
+    // region: {x,y,w,h}
+    const image = await getImage(currentImageId);
+    const titleVal = existing? existing.title || '' : '';
+    const descVal = existing? existing.desc || '' : '';
+    const html = `
+      <div>
+        <h3 style="margin:0 0 8px 0">${ existing ? 'Editar anotação' : 'Nova anotação' }</h3>
+        <label>Título</label>
+        <input id="annoTitle" type="text" value="${escapeHTML(titleVal)}" style="width:100%; padding:8px; border-radius:8px; background:transparent; border:1px solid rgba(255,255,255,0.03); color:var(--muted)"/>
+        <label style="margin-top:8px">Descrição</label>
+        <textarea id="annoDesc">${escapeHTML(descVal)}</textarea>
+        <div style="display:flex; gap:8px; margin-top:10px; justify-content:flex-end">
+          <button id="cancelBtn" class="btn">Cancelar</button>
+          <button id="saveBtn" class="btn primary">${ existing ? 'Salvar' : 'Adicionar' }</button>
+        </div>
+      </div>
+    `;
+    const m = showModal(html);
+    m.dialog.querySelector('#cancelBtn').addEventListener('click', ()=> closeModal());
+    m.dialog.querySelector('#saveBtn').addEventListener('click', async ()=>{
+      const t = m.dialog.querySelector('#annoTitle').value.trim() || 'Anotação';
+      const d = m.dialog.querySelector('#annoDesc').value.trim();
+      if(existing){
+        existing.title = t;
+        existing.desc = d;
+        // existing region unchanged
+        await updateAnnotation(currentImageId, existing);
+      } else {
+        const ann = { id: uid(), title: t, desc: d, x: region.x, y: region.y, w: region.w, h: region.h, createdAt:Date.now() };
+        await addAnnotation(currentImageId, ann);
+      }
+      closeModal();
+    });
+  }
+
+  async function showAnnotationEditor(ann){
+    const image = await getImage(currentImageId);
+    await openAnnotationModal({ x: ann.x, y: ann.y, w: ann.w, h: ann.h }, ann);
+  }
+
+  // ---------- Annotation storage helpers ----------
+  async function addAnnotation(imageId, ann){
+    const img = await getImage(imageId);
+    img.anns = img.anns || [];
+    img.anns.push(ann);
+    await putImage(img);
+    renderAnnotations(img.anns);
+    updateAnnList(img.anns);
+    updateCounts();
+  }
+  async function updateAnnotation(imageId, ann){
+    const img = await getImage(imageId);
+    img.anns = img.anns || [];
+    img.anns = img.anns.map(a => a.id === ann.id ? ann : a);
+    await putImage(img);
+    renderAnnotations(img.anns);
+    updateAnnList(img.anns);
+    updateCounts();
+  }
+  async function removeAnnotation(imageId, annId){
+    const img = await getImage(imageId);
+    img.anns = (img.anns || []).filter(a => a.id !== annId);
+    await putImage(img);
+    renderAnnotations(img.anns);
+    updateAnnList(img.anns);
+    updateCounts();
+  }
+
+  // ---------- Project export/import ----------
+  exportProjectBtn.addEventListener('click', async ()=>{
+    const imgs = await getAllImages();
+    const out = { exportedAt: new Date().toISOString(), images: imgs.map(i=>({
+      id: i.id, name: i.name, type: i.type, size: i.size, dataURL: i.dataURL, anns: i.anns || [], addedAt: i.addedAt || Date.now()
+    }))};
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'setorimagens_export.json'; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  importProjectInput.addEventListener('change', async (e)=>{
+    const f = e.target.files[0];
+    if(!f) return;
+    const text = await f.text();
+    try{
+      const json = JSON.parse(text);
+      if(!json.images || !Array.isArray(json.images)) throw new Error('Formato inválido');
+      for(const img of json.images){
+        // keep same id if present
+        const obj = {
+          id: img.id || uid(),
+          name: img.name || 'sem-nome',
+          size: img.size || 0,
+          type: img.type || 'image/*',
+          dataURL: img.dataURL,
+          thumb: img.thumb || await makeThumb(img.dataURL,200,120),
+          anns: img.anns || [],
+          addedAt: img.addedAt || Date.now()
+        };
+        await putImage(obj);
+      }
+      alert('Importação concluída.');
+      await refreshFromDB();
+    }catch(err){
+      alert('Erro ao importar: ' + err.message);
+      console.error(err);
+    }
+    importProjectInput.value = '';
+  });
+
+  // clear all
+  clearAllBtn.addEventListener('click', async ()=>{
+    if(!confirm('Apagar todas as imagens e anotações? Essa ação não pode ser desfeita.')) return;
+    await clearDB();
+    await refreshFromDB();
+    clearViewer();
+  });
+
+  // export image-specific annotations
+  exportImageDataBtn.addEventListener('click', async ()=>{
+    if(!currentImageId){ alert('Selecione uma imagem primeiro.'); return; }
+    const img = await getImage(currentImageId);
+    const out = { exportedAt: new Date().toISOString(), image: { id: img.id, name: img.name, size: img.size, type: img.type, anns: img.anns || [] } };
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${img.name || 'image'}_annotations.json`; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // zoom controls
+  zoomInBtn.addEventListener('click', ()=> { zoom = Math.min(3, zoom + 0.2); mainImage.style.transform = `scale(${zoom})`; overlay.style.transform = `scale(${zoom})`; overlay.style.transformOrigin = 'center'; });
+  zoomOutBtn.addEventListener('click', ()=> { zoom = Math.max(0.5, zoom - 0.2); mainImage.style.transform = `scale(${zoom})`; overlay.style.transform = `scale(${zoom})`; overlay.style.transformOrigin = 'center'; });
+
+  // search
+  searchBox.addEventListener('input', ()=> renderThumbs(IMAGES));
+
+  // handle DOM image load to re-render overlays with correct sizes
+  mainImage.addEventListener('load', async ()=>{
+    // re-render current annotations for accurate placement (they're normalized so it's okay)
+    if(!currentImageId) return;
+    const img = await getImage(currentImageId);
+    renderAnnotations(img.anns || []);
+  });
+
+  // keyboard shortcuts
+  window.addEventListener('keydown', (e)=>{
+    if(e.key === 'Delete' && currentImageId){
+      // delete current image
+      if(confirm('Excluir imagem selecionada?')){
+        deleteImage(currentImageId).then(()=>{ refreshFromDB(); clearViewer(); });
+      }
+    }
+  });
+
+  // initial UI state
+  if(IMAGES.length>0) renderThumbs(IMAGES);
+
+  // small helper for development/debug
+  window.SetorImagens = { refreshFromDB, getAllImages, getImage, putImage, deleteImage };
+
+})();
+</script>
+</body>
+</html>
+
